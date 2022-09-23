@@ -1,0 +1,272 @@
+/*
+* 修改时间： 2022-5-20
+* linux环境:     protoc-java --proto_path=./ --java_out=./ ExternalDataSet.proto
+* rdkafka topic name: gsafety_instruction(指令信息订阅)
+* rdkafka topic name: gsafety_status(指令执行状态订阅)
+* rdkafka topic name: gsafety_alarm(告警信息订阅)
+* rdkafka topic name: gsafety_analysis(性能分析订阅)
+*/
+
+//指定版本信息，不指定会报错
+syntax = "proto3";
+
+//package name for avoiding name conflict
+option java_outer_classname = "ExternalDataSet";
+
+enum VIDEOFMT
+{
+    H264 = 0;
+    H265 = 1;
+}
+
+enum ALGORITHMTYPE
+{
+    //烟火
+    FIRE = 0;
+    //安全帽
+    HELMET = 1;
+    //值班员脱岗
+    PERSION = 2;
+    //人脸识别
+    FACE = 3;
+    //车辆车牌识别
+    VEHICLE = 4;
+    //烟火、安全帽、值班人员脱岗、车牌、车辆属性识别、人密、人脸、皮带跑偏、动火识别、反光衣识别。
+    //车辆属性
+    VEHICLE_TYPE = 5;
+    //人群密度，计数、密度图
+    CROWD_DENSITY = 6;
+    //人流量统计
+    CROWD_FLOW = 7;
+    //人车追踪
+    PERSON_VEHICLE_TRACKING = 8;
+    //动火作业
+    WELDING = 9;
+    //反光衣识别
+    REFLECTIVE_CLOSTHES = 10;
+    //皮带跑偏算法
+    BLET_DEVIATION = 11;
+    //打架
+    FIGHT = 12;
+    //摔倒
+    FALL = 13;
+    //抽烟识别
+    SMOKING = 14;
+};
+
+enum DATASTATE
+{
+    SUCCESS          = 0x0;
+    FAILED           = 0X01;
+    //缺少必要字段
+    LOSEFIELD        = 0x10;
+    //忽略算法id
+    IGNOREAID        = 0X11;
+    //算法或摄像头已存在
+    EXISTED          = 0x12;
+    //算法或摄像头不存在
+    NOEXISTED        = 0X13;
+    //资源不足
+    NORESOURCE       = 0x14;
+    //超出计算能力
+    NOCAPACITY       = 0x15;
+    //平台下发指令顺序异常
+    INSTRUCTMISMATCH = 0X16;
+    //算法修改变更删除操作
+    ALGORITHDELETE   = 0x17;
+    //平台数据解析失败
+    PARSINGERROR     = 0X18;
+};
+
+//指令操作类型
+enum IOT
+{
+    UNKNOWN    = 0X0;  //placeholder
+    ADD        = 0x01;
+    AMODIFY    = 0x02; //算法参数修改
+    VMODIFY    = 0x04; //视频参数修改
+    DELETE     = 0x08;
+    STATUS     = 0x10; //指令执行状态-->递送平台端
+    NOTICE     = 0x20; //后端运行状态通知
+    RUN_STATUS = 0x40; //程序启动状态
+}
+
+//features and rect box
+message FRect
+{
+	int32 x = 1;
+	int32 y = 2;
+	int32 width = 3;
+	int32 height = 4;
+    optional float confidence = 5;
+    optional string vehicle = 6;
+    repeated double feature = 7;
+}
+
+/*
+* 摄像头数据集合
+*/
+message CameraInfo
+{
+    //摄像头名称
+    optional string CameraName = 1;
+    //摄像头地址
+    optional string CameraUrl = 2;
+    //摄像头ID,推拉流地址末尾字段
+    optional string CameraId = 3;
+    //推流地址
+    optional string DestUrl = 4;
+    //摄像头地址是否级联
+    optional bool Cascade = 5;
+    //摄像头视频格式
+    optional VIDEOFMT Format = 6;
+    //摄像头分辨率
+    optional uint32 Width = 7;
+    optional uint32 Height = 8;
+    //指定摄像头解析结束时间
+    optional uint64 EndTimeStamp = 9;
+    //是否推流
+    optional bool PushFlow = 10;
+    //跳帧频率
+    optional uint32 SkipFrameFrequency = 11;
+    //摄像头执行状态
+    optional int32 status = 12;
+    //报警保存视频时长,单位秒
+    optional int32 saveVideoDuration = 13;
+}
+
+message InteractionPoint
+{
+    float horizontal = 1; //图像的左上角为(0,0)，该点横坐标绝对值
+    float ordinate = 2; //图像的左上角为(0,0)，该点纵坐标绝对值
+};
+
+message InteractionArea 
+{
+    optional int32 height = 1;
+    optional int32 width = 2;
+    optional int32 interestType = 3;//1感兴趣区域，2反选感兴趣区域，3单伴线
+    repeated InteractionPoint allPoints = 4; //单伴线3个点，前两个为单伴线，后一个为进入方向的点，【非】感兴趣----大于等于三个点
+    optional bool shutDownArea = 5;//注意shutDoownArea如果是true，上面的isInterest和allPoints都不应该有值
+};
+
+message AlgorithmParm
+{
+    //1:1模式下算法与摄像头对应ID,3.0版本停用
+    optional string CameraId = 1;
+    //过滤阈值,add接口参数
+    optional float Nms = 2;
+    //置信度阈值
+    optional float Threshold = 3;
+    //多通道并行数,add接口参数
+    optional uint32 BatchSize = 4;
+    //视频区域框
+    optional InteractionArea Region = 5;
+    //算法执行状态
+    optional int32 status = 6;
+    //告警间隔时间
+    optional uint64 AlarmInterval = 7;
+    //算法输入图分辨率,add接口参数
+    optional uint32 Resolution = 8;
+}
+
+message AlarmInfo
+{
+    //告警唯一ID
+    string AlarmId = 1;
+    //指令对应大算法的唯一标识
+    string AlgorithmId = 2;
+    //当前指令id(任务ID)
+    string CurrentId = 3;
+    //容器唯一标识
+    string ContainerID = 4;
+    //摄像头ID
+    string CameraId = 5;
+    //当前算法类型值设定
+    int32 AlgorithmType = 6;
+    //图片保存路径
+    string ImagePath = 7;
+    //视频保存路径
+    string VideoPath = 8;
+    //告警时间戳
+    uint64 TimeStamp = 9;
+    //摄像头名称
+    optional string CameraName = 10;
+    //报警区域数据
+    repeated FRect Rects = 11;
+}
+
+/** 
+* 操作成功算法和摄像头没有数据，操作失败填充对应数据实体
+* 状态返回按照平台指令下发的条目数单独进行返回
+*/
+message InstructionInfo
+{
+    //一次指令操作的类型
+    IOT iot = 1;
+    //当前指令id
+    string CurrentId = 2;
+    //指令对应大算法的唯一标识
+    string AlgorithmId = 3;
+    //指令对应算法特定容器唯一标识
+    optional string ContainerID = 4;
+    //当前算法类型值设定
+    int32 AlgorithmType = 5;
+    //指令下发时间
+    uint64 TimeStamp = 6;
+    //指令执行状态
+    optional int32 status = 7;
+    //算法参数实体数据
+    repeated AlgorithmParm Aparms = 8;
+    //指令对应摄像头实体信息
+    repeated CameraInfo CameraInfos = 9;
+    //承载算法的显卡型号,预留字段
+    optional string GraphicsModel = 10;
+}
+
+message DecodeParamAll
+{
+    string decodeId = 1;
+    string cameraId = 2;
+    int32 videoFPS = 3;
+    int32 decodeFPS = 4;
+    uint32 SkipFrameFrequency = 5;    
+};
+
+message AIParamAll
+{
+    string algorithmId = 1;
+    string algorithmName = 2;
+    int32 algorithmFPS = 3;
+    int32 defaultFPS = 4;
+};
+
+message DelayInfo //如果整体没有延迟，不推送
+{
+    //解码延迟结构体
+    repeated DecodeParamAll decParamall = 1; //自增，如果没有延迟，没有变量
+    //AI延迟的结构体
+    repeated AIParamAll aiparamall = 2;
+};
+
+/* 固定数据，程序启动需要
+//postgres
+std::string DBName;
+std::string DBUser;
+std::string DBPwd;
+std::string DBHost;
+
+//mongodb
+std::string MDBName;
+std::string MDBUser;
+std::string MDBPwd;
+std::string MDBHost;
+std::string MDBPort;
+
+//http服务
+std::string HttpHost;
+
+//kafka服务
+std::string kafkaHost;
+std::string kafkaTopicName;
+*/
